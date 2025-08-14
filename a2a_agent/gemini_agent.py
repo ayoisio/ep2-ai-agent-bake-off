@@ -1,5 +1,6 @@
 
 import os
+from .tools import reddit_tools as rt
 from .tools import financial_tools as ft
 from .tools import services_tools as st
 from .prompts import AGENT_INSTRUCTIONS
@@ -119,6 +120,8 @@ class Agent(LlmAgent):
             ft.schedule_meeting,
             ft.get_user_meetings,
             ft.cancel_meeting,
+            ft.search_reddit_finance_advice,
+            ft.get_reddit_community_tips,
             st.get_all_endpoints,
             st.get_all_data_schemas,
         ]
@@ -133,8 +136,7 @@ class Agent(LlmAgent):
 
 
     def create_agent_card(self, agent_url: str) -> "AgentCard":
-        return AgentCard(
-            
+        return AgentCard( 
             name=self.name,
             description=self.description,
             url=agent_url,

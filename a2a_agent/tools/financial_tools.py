@@ -183,7 +183,7 @@ def get_user_eligible_partners(user_id: str) -> dict:
     response = requests.get(f"{API_BASE_URL}/partners/user/{user_id}")
     return response.json()
 
-def create_user_schedule( schedule_data: dict, user_id: str) -> dict:
+def create_user_schedule(schedule_data: dict, user_id: str) -> dict:
     """
     Creates a new scheduled transaction for a user.
     
@@ -290,6 +290,84 @@ def cancel_meeting(meeting_id: str) -> dict:
     """
     response = requests.delete(f"{API_BASE_URL}/meetings/{meeting_id}")
     return response.json()
+
+# ===== NEW REDDIT COMMUNITY FUNCTIONS =====
+
+def search_reddit_finance_advice(query: str, category: str = "general_finance") -> dict:
+    """
+    Search Reddit for finance-related advice and discussions.
+    
+    Required Inputs:
+    - query (str): What to search for (e.g., "save money groceries", "budget travel europe")
+    - category (str): Type of advice - "travel", "daily_spending", or "general_finance"
+    """
+    from .reddit_tools import get_reddit_tool
+    
+    reddit = get_reddit_tool()
+    results = reddit.search_relevant_threads(query, category, limit=5)
+    
+    # Ensure results is a list
+    if results is None:
+        results = []
+    
+    # Format results for agent consumption
+    formatted_results = {
+        "query": query,
+        "category": category,
+        "found_threads": len(results),
+        "threads": []
+    }
+    
+    for thread in results:
+        formatted_results["threads"].append({
+            "title": thread["title"],
+            "author": thread.get("author", "unknown"),
+            "subreddit": f"r/{thread['subreddit']}",
+            "url": thread["url"],
+            "key_points": [comment["text"][:150] + "..." for comment in thread["top_comments"][:2]] if thread.get("top_comments") else [],
+            "engagement": f"{thread['score']} upvotes, {thread['num_comments']} comments"
+        })
+    
+    return formatted_results
+
+def get_reddit_community_tips(topic: str, spending_type: str) -> dict:
+    """
+    Get community tips from Reddit on specific topics.
+    
+    Required Inputs:
+    - topic (str): Specific topic to get tips about (e.g., "cheap meals", "flight deals")
+    - spending_type (str): Either "travel" or "daily_spending"
+    """
+    from .reddit_tools import get_reddit_tool
+    
+    reddit = get_reddit_tool()
+    threads = reddit.search_relevant_threads(topic, spending_type, limit=3)
+    
+    # Ensure threads is a list
+    if threads is None:
+        threads = []
+    
+    tips = []
+    sources = []
+    
+    for thread in threads:
+        sources.append({
+            "title": thread["title"],
+            "url": thread["url"],
+            "subreddit": thread["subreddit"]
+        })
+        
+        # Extract tips from top comments
+        for comment in thread.get("top_comments", []):
+            if comment.get("score", 0) > 10:
+                tips.append(comment["text"][:200] + "...")
+    
+    return {
+        "topic": topic,
+        "community_advice_found": len(tips) > 0,
+        "tips": tips[:5],  # Limit to 5 tips
+        "sources": sources[:3]  # Top 3 sources
+    }
 
 def get_tool_prompt() -> str:
     """
@@ -462,9 +540,23 @@ def get_tool_prompt() -> str:
     print(cancel_meeting(meeting_id='meet-001'))
     </tool_code>
 
+    **Community Insights from Reddit:**
+    **User:** "What are the best ways to save on groceries?"
+    **Response:** "I'll search for community tips on saving money on groceries."
+    <tool_code>
+    print(search_reddit_finance_advice(query='save money groceries', category='daily_spending'))
+    </tool_code>
+
+    **User:** "Any travel hacks for Europe?"
+    **Response:** "Let me find community travel tips for Europe."
+    <tool_code>
+    print(get_reddit_community_tips(topic='Europe budget travel', spending_type='travel'))
+    </tool_code>
+
     **Professional Standards:**
     - Use tools to provide accurate, current data
     - Present information in clear, organized formats
     - Offer brief insights when data reveals opportunities
     - Maintain professional tone throughout interactions
+    - When sharing Reddit community tips, always cite the source subreddit
     """

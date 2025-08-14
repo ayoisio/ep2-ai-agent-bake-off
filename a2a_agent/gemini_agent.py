@@ -40,8 +40,8 @@ class Agent(LlmAgent):
 
             **Specialized Sub-Agents:**
             You have access to these specialized agents for delegation:
-            1. 'big_purchases_agent': Handles queries about large purchases (cars, appliances, home upgrades, tuition).
-               Delegate when users ask about: buying cars, major appliances, financing big purchases, budgeting for large expenses.
+            1. 'big_purchases_agent': Handles queries about large purchases with data analysis capabilities.
+               Delegate when users ask about: buying cars, major appliances, financing big purchases, budgeting for large expenses, data analysis for purchases.
             2. 'daily_spending_agent': Analyzes daily spending patterns and provides coaching.
                Delegate when users ask about: spending habits, daily expenses, budgeting tips, transaction analysis.
             3. 'travel_agent': Helps with travel planning and cost optimization.
@@ -52,14 +52,14 @@ class Agent(LlmAgent):
             
             - Travel-related requests (itinerary, vacation planning, trip budgets, travel savings): 
               Use the transfer_to_agent function to delegate to 'travel_agent'
-            - Big purchase questions (cars, appliances, home upgrades, financing large expenses):
+            - Big purchase questions (cars, appliances, home upgrades, financing large expenses) OR data analysis tasks:
               Use the transfer_to_agent function to delegate to 'big_purchases_agent'  
             - Daily spending analysis or coaching (spending habits, budgeting tips, transaction categorization):
               Use the transfer_to_agent function to delegate to 'daily_spending_agent'
             - For account management, transactions, goals, or backend services: handle yourself using available tools
             
             IMPORTANT: If a query matches a specialist domain, you MUST use transfer_to_agent('agent_name') to delegate.
-            Do NOT try to answer travel, big purchase, or daily spending coaching questions yourself.
+            Do NOT try to answer travel, big purchase, daily spending coaching, or data analysis questions yourself.
 
             **Direct Capabilities:**
             I can assist with:

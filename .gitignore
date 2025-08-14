@@ -74,3 +74,17 @@ dmypy.json
 .DS_Store
 .DS_Store?
 ._*
+
+# Google Cloud credentials and sensitive files
+*.json
+!.env.example
+a2a_agent/agents/data_science/agent-bake-off-episode-2-91a9bffe53ad.json
+setup_gcp_credentials.sh
+
+# Data science artifacts
+a2a_agent/data_science.egg-info/
+*.egg-info/
+
+# ADK/Agent artifacts  
+sessions.db
+*.db

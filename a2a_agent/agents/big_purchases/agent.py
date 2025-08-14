@@ -1,5 +1,8 @@
 from google.adk.agents import LlmAgent
 
+# Import data science agent to be a sub-agent
+from ..data_science import root_agent as data_science_agent
+
 
 def _make_sub_agents():
     selector = LlmAgent(
@@ -30,14 +33,19 @@ _sub_selector, _sub_advisor = _make_sub_agents()
 root_agent = LlmAgent(
     name="big_purchases_agent",
     model="gemini-2.5-flash",
-    description="Coordinates sub-agents to help plan and evaluate big purchases.",
+    description="Coordinates sub-agents to help plan and evaluate big purchases with data analysis capabilities.",
     instruction=(
-        "You orchestrate big purchase planning."
-        " First, use 'bp_selector' to determine relevance and purchase type."
-        " Then, use 'bp_advisor' to provide budgeting and financing guidance."
+        "You orchestrate big purchase planning with data analysis support."
+        " You have access to these sub-agents:"
+        " 1. 'bp_selector': Identifies if queries concern big purchases and classifies purchase type."
+        " 2. 'bp_advisor': Provides budgeting, financing, and timing guidance for large purchases."
+        " 3. 'db_ds_multiagent': Handles data analysis, SQL queries, and data science tasks."
+        " "
+        " For big purchase questions: use bp_selector first, then bp_advisor for guidance."
+        " For data analysis, reporting, or SQL queries: delegate to 'db_ds_multiagent'."
         " Keep responses concise and actionable."
     ),
-    sub_agents=[_sub_selector, _sub_advisor],
+    sub_agents=[_sub_selector, _sub_advisor, data_science_agent],
 )
 
 

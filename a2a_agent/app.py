@@ -2,10 +2,12 @@ import os
 import logging
 from typing import Dict, Any, Optional
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
+import uuid
+from datetime import datetime
 
 # Your imports
 from gemini_agent import root_agent
@@ -14,6 +16,14 @@ from google.adk.sessions import InMemorySessionService
 from google.adk.artifacts import InMemoryArtifactService
 from google.adk.memory import InMemoryMemoryService
 from google.genai.types import Content, Part
+
+# Visual generation imports
+import requests
+import hashlib
+import asyncio
+from google import genai
+from google.cloud import storage
+from google.cloud import firestore
 
 # Load environment variables
 load_dotenv()
@@ -51,6 +61,122 @@ runner = Runner(
     artifact_service=artifact_service,
     memory_service=memory_service,
 )
+
+# Initialize Visual Generation Service
+class VisualGenerationService:
+    def __init__(self):
+        self.ideogram_api_key = os.environ.get("IDEOGRAM_API_KEY")
+        self.genai_client = genai.Client()
+        self.storage_client = storage.Client()
+        self.db = firestore.Client()
+        self.bucket_name = "agent-bake-off-episode-2.firebasestorage.app"
+    
+    async def generate_trip_visual(
+        self,
+        user_id: str,
+        trip_id: str,
+        prompt: str,
+        reference_image: Optional[bytes] = None
+    ) -> Dict[str, Any]:
+        """Generate a trip visualization"""
+        
+        # Check if we already have this visual
+        visual_ref = self.db.collection('trip_visuals').document(f"{trip_id}_{user_id}")
+        existing = visual_ref.get()
+        
+        if existing.exists and not existing.to_dict().get('regenerate_requested'):
+            return existing.to_dict()
+        
+        # Generate with Ideogram
+        headers = {"Api-Key": self.ideogram_api_key}
+        
+        if reference_image:
+            files = [("character_reference_images", ("image.png", reference_image))]
+            data = {
+                "style_type": "AUTO",
+                "prompt": prompt,
+                "rendering_speed": "TURBO"
+            }
+            response = requests.post(
+                "https://api.ideogram.ai/v1/ideogram-v3/generate",
+                headers=headers,
+                data=data,
+                files=files
+            )
+        else:
+            response = requests.post(
+                "https://api.ideogram.ai/v1/ideogram-v3/generate",
+                headers=headers,
+                json={"prompt": prompt, "rendering_speed": "TURBO"}
+            )
+        
+        if response.status_code != 200:
+            raise Exception(f"Ideogram API error: {response.status_code}")
+        
+        result = response.json()
+        image_url = result['data'][0]['url']
+        image_data = requests.get(image_url).content
+        
+        # Store image in GCS
+        image_path = f"trips/{trip_id}/visuals/{user_id}_{uuid.uuid4()}.png"
+        bucket = self.storage_client.bucket(self.bucket_name)
+        blob = bucket.blob(image_path)
+        blob.upload_from_string(image_data)
+        blob.make_public()
+        
+        # Save metadata
+        visual_data = {
+            'user_id': user_id,
+            'trip_id': trip_id,
+            'prompt': prompt,
+            'image_url': blob.public_url,
+            'video_status': 'pending',
+            'created_at': datetime.utcnow().isoformat()
+        }
+        visual_ref.set(visual_data)
+        
+        # Start video generation in background
+        asyncio.create_task(self._generate_video_async(
+            visual_ref.id, prompt, image_data
+        ))
+        
+        return visual_data
+    
+    async def _generate_video_async(self, doc_id: str, prompt: str, image_data: bytes):
+        """Generate video in background"""
+        try:
+            operation = self.genai_client.models.generate_videos(
+                model="veo-3.0-generate-preview",
+                prompt=prompt,
+                image=image_data
+            )
+            
+            while not operation.done:
+                await asyncio.sleep(10)
+                operation = self.genai_client.operations.get(operation)
+            
+            video = operation.response.generated_videos[0]
+            
+            # Store video
+            video_path = f"trips/videos/{doc_id}.mp4"
+            bucket = self.storage_client.bucket(self.bucket_name)
+            blob = bucket.blob(video_path)
+            blob.upload_from_string(video.video.read())
+            blob.make_public()
+            
+            # Update document
+            self.db.collection('trip_visuals').document(doc_id).update({
+                'video_url': blob.public_url,
+                'video_status': 'ready'
+            })
+        except Exception as e:
+            self.db.collection('trip_visuals').document(doc_id).update({
+                'video_status': 'failed',
+                'video_error': str(e)
+            })
+
+# Initialize visual service
+visual_service = VisualGenerationService()
 
 # Request/Response models
 class ChatRequest(BaseModel):
@@ -121,6 +247,118 @@ async def chat(request: ChatRequest):
         logger.error(f"Error processing request: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+# Visual Generation Endpoints
+@app.post("/api/trips/{trip_id}/visualize")
+async def generate_trip_visual(
+    trip_id: str,
+    prompt: str = Form(...),
+    user_id: str = Form(...),
+    reference_image: Optional[UploadFile] = File(None)
+):
+    """Generate visual for a trip"""
+    try:
+        image_data = None
+        if reference_image:
+            image_data = await reference_image.read()
+        
+        result = await visual_service.generate_trip_visual(
+            user_id=user_id,
+            trip_id=trip_id,
+            prompt=prompt,
+            reference_image=image_data
+        )
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error generating visual: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/trips/{trip_id}/visuals")
+async def get_trip_visuals(trip_id: str):
+    """Get all visuals for a trip"""
+    try:
+        visuals = visual_service.db.collection('trip_visuals')\
+            .where('trip_id', '==', trip_id)\
+            .stream()
+        
+        return [v.to_dict() for v in visuals]
+    except Exception as e:
+        logger.error(f"Error fetching visuals: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/trips/{trip_id}/invite")
+async def invite_to_trip(
+    trip_id: str, 
+    email: str = Form(...), 
+    inviter_id: str = Form(...)
+):
+    """Send trip invitation"""
+    try:
+        # Create invitation record
+        invitation = {
+            'trip_id': trip_id,
+            'inviter_id': inviter_id,
+            'invitee_email': email,
+            'status': 'pending',
+            'created_at': datetime.utcnow().isoformat(),
+            'invitation_id': str(uuid.uuid4())
+        }
+        
+        visual_service.db.collection('trip_invitations').add(invitation)
+        
+        # Could send email here using SendGrid or similar
+        
+        return {"status": "invitation_sent", "invitation": invitation}
+    except Exception as e:
+        logger.error(f"Error sending invitation: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/trips/{trip_id}/members")
+async def get_trip_members(trip_id: str):
+    """Get all members of a trip"""
+    try:
+        # Get accepted invitations
+        invitations = visual_service.db.collection('trip_invitations')\
+            .where('trip_id', '==', trip_id)\
+            .where('status', '==', 'accepted')\
+            .stream()
+        
+        members = []
+        for inv in invitations:
+            inv_data = inv.to_dict()
+            members.append({
+                'email': inv_data.get('invitee_email'),
+                'joined_at': inv_data.get('accepted_at', inv_data.get('created_at'))
+            })
+        
+        return members
+    except Exception as e:
+        logger.error(f"Error fetching trip members: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/invitations/{invitation_id}/accept")
+async def accept_invitation(invitation_id: str, user_id: str = Form(...)):
+    """Accept a trip invitation"""
+    try:
+        # Update invitation status
+        invitations = visual_service.db.collection('trip_invitations')\
+            .where('invitation_id', '==', invitation_id)\
+            .limit(1)\
+            .stream()
+        
+        for inv in invitations:
+            inv.reference.update({
+                'status': 'accepted',
+                'accepted_by': user_id,
+                'accepted_at': datetime.utcnow().isoformat()
+            })
+            return {"status": "accepted", "trip_id": inv.to_dict().get('trip_id')}
+        
+        raise HTTPException(status_code=404, detail="Invitation not found")
+    except Exception as e:
+        logger.error(f"Error accepting invitation: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/")
 async def root():
     return {
@@ -128,7 +366,14 @@ async def root():
         "endpoints": {
             "health": "/health",
             "chat": "/chat",
-            "docs": "/docs"
+            "docs": "/docs",
+            "visual_generation": {
+                "generate": "/api/trips/{trip_id}/visualize",
+                "get_visuals": "/api/trips/{trip_id}/visuals",
+                "invite": "/api/trips/{trip_id}/invite",
+                "members": "/api/trips/{trip_id}/members",
+                "accept_invitation": "/api/invitations/{invitation_id}/accept"
+            }
         }
     }
 

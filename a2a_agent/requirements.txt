@@ -3,6 +3,8 @@ google-adk
 google-genai
 google-cloud-aiplatform
 google-cloud-bigquery
+google-cloud-firestore
+google-cloud-storage
 pandas
 numpy
 matplotlib
@@ -16,3 +18,5 @@ gunicorn
 python-dotenv
 asyncclick
 requests
+fastapi
+python-multipart

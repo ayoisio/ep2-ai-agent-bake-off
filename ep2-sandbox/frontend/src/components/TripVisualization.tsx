@@ -108,7 +108,6 @@ export const TripVisualization: React.FC<TripVisualizationProps> = ({
   };
 
   const pollForVideo = () => {
-    // Clear any existing interval
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
     }
@@ -134,15 +133,11 @@ export const TripVisualization: React.FC<TripVisualizationProps> = ({
             description: "Your animated visualization is now available.",
           });
         } else if (currentVisual?.video_status === "failed") {
+          // Just stop polling silently - no error toast
           if (intervalRef.current) {
             clearInterval(intervalRef.current);
           }
-          toast({
-            title: "Video generation failed",
-            description:
-              "The animation couldn't be created, but your image is still available.",
-            variant: "destructive",
-          });
+          // Remove the "Creating animated version..." text by not setting any state
         }
       } catch (error) {
         console.error("Polling error:", error);

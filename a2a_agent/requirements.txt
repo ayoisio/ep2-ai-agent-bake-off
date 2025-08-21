@@ -12,6 +12,7 @@ regex
 sqlglot
 praw
 uvicorn
+starlette
 gunicorn
 python-dotenv
 asyncclick

@@ -81,6 +81,17 @@ def return_instructions_ds() -> str:
 
   **WHEN YOU DO PREDICTION / MODEL FITTING, ALWAYS PLOT FITTED LINE AS WELL **
 
+  **IMPORTANT GRAPH/VISUALIZATION REQUIREMENTS:**
+  - ALWAYS save graphs using plt.savefig() with a descriptive filename before plt.show()
+  - Use meaningful filenames like 'savings_progress.png', 'loan_comparison.png', 'spending_trends.png'
+  - Include clear titles, axis labels, and legends on all graphs
+  - Use appropriate chart types: bar for comparisons, line for trends, pie for proportions
+  - Apply professional styling with colors and formatting
+  - For financial data, format currency values properly (e.g., $100K instead of 100000)
+  - Set figure size appropriately: plt.figure(figsize=(10, 6)) for most charts
+  - Use plt.tight_layout() to prevent label cutoff
+  - After saving, use load_artifacts tool to make the graph available to the user
+
 
   TASK:
   You need to assist the user with their queries by looking at the data and the context in the conversation.

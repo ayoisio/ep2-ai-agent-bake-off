@@ -4,6 +4,20 @@ import { agentService } from "@/services/agent";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { TripVisualization } from "@/components/TripVisualization";
+import {
+  Plane,
+  MapPin,
+  Calendar,
+  DollarSign,
+  Users,
+  Plus,
+  X,
+} from "lucide-react";
+
+// Hardcoded backend URL - same as in agent.ts
+const AGENT_BASE_URL =
+  "https://financial-service-agent-609099553774.us-central1.run.app";
 
 interface Message {
   id: string;
@@ -11,6 +25,15 @@ interface Message {
   text: string;
   formattedText?: string;
   timestamp: Date;
+}
+
+interface Trip {
+  id: string;
+  name: string;
+  destination: string;
+  startDate?: string;
+  endDate?: string;
+  budget?: number;
 }
 
 const TravelPage: React.FC = () => {
@@ -28,14 +51,19 @@ const TravelPage: React.FC = () => {
   const [contextId, setContextId] = useState<string | undefined>();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Trip planning states
+  const [currentTrip, setCurrentTrip] = useState<Trip | null>(null);
+  const [showVisualization, setShowVisualization] = useState(false);
+  const [showCreateTrip, setShowCreateTrip] = useState(false);
+  const [newTripName, setNewTripName] = useState("");
+  const [newTripDestination, setNewTripDestination] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [tripMembers, setTripMembers] = useState<string[]>([]);
+
   // Helper function to format response text with bold and newlines
   const formatResponseText = (text: string) => {
-    // Convert markdown-style bold (**text**) to HTML bold tags
     let formattedText = text.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-
-    // Convert newlines to <br> tags for proper display
     formattedText = formattedText.replace(/\n/g, "<br>");
-
     return formattedText;
   };
 
@@ -96,10 +124,51 @@ const TravelPage: React.FC = () => {
     }
   };
 
+  const createTrip = () => {
+    if (!newTripName || !newTripDestination) return;
+
+    const trip: Trip = {
+      id: `trip-${Date.now()}`,
+      name: newTripName,
+      destination: newTripDestination,
+    };
+
+    setCurrentTrip(trip);
+    setShowCreateTrip(false);
+    setNewTripName("");
+    setNewTripDestination("");
+  };
+
+  const inviteFriend = async () => {
+    if (!inviteEmail || !currentTrip) return;
+
+    try {
+      const formData = new FormData();
+      formData.append("email", inviteEmail);
+      formData.append("inviter_id", currentUser?.uid || "");
+
+      const response = await fetch(
+        `${AGENT_BASE_URL}/api/trips/${currentTrip.id}/invite`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+
+      if (response.ok) {
+        setTripMembers([...tripMembers, inviteEmail]);
+        setInviteEmail("");
+      }
+    } catch (error) {
+      console.error("Failed to send invitation:", error);
+    }
+  };
+
   return (
-    <div className="container mx-auto py-6 px-4 max-w-6xl">
+    <div className="container mx-auto py-6 px-4 max-w-7xl">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-foreground">
+        <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
+          <Plane className="h-8 w-8" />
           Travel Finance Advisor
         </h1>
         <p className="text-muted-foreground mt-2">
@@ -108,12 +177,116 @@ const TravelPage: React.FC = () => {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Travel Tools & Info */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Travel Tools & Info - Left Column */}
         <div className="lg:col-span-1 space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Travel Budget</CardTitle>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <MapPin className="h-4 w-4" />
+                Current Trip
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {currentTrip ? (
+                <div className="space-y-2">
+                  <p className="font-medium">{currentTrip.name}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {currentTrip.destination}
+                  </p>
+                  <Button
+                    variant="outline"
+                    className="w-full mt-2"
+                    onClick={() => setShowVisualization(!showVisualization)}
+                  >
+                    {showVisualization ? "Hide" : "Show"} Visualization
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    No active trip planned
+                  </p>
+                  <Button
+                    className="w-full"
+                    onClick={() => setShowCreateTrip(true)}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Plan New Trip
+                  </Button>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {showCreateTrip && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Create Trip</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Input
+                  placeholder="Trip name..."
+                  value={newTripName}
+                  onChange={(e) => setNewTripName(e.target.value)}
+                />
+                <Input
+                  placeholder="Destination..."
+                  value={newTripDestination}
+                  onChange={(e) => setNewTripDestination(e.target.value)}
+                />
+                <div className="flex gap-2">
+                  <Button onClick={createTrip} className="flex-1">
+                    Create
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowCreateTrip(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {currentTrip && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Users className="h-4 w-4" />
+                  Trip Members
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2 mb-3">
+                  {tripMembers.map((email, index) => (
+                    <div key={index} className="text-sm">
+                      {email}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Email to invite..."
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button onClick={inviteFriend} size="sm">
+                    Invite
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <DollarSign className="h-4 w-4" />
+                Travel Budget
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
@@ -151,23 +324,19 @@ const TravelPage: React.FC = () => {
               </div>
             </CardContent>
           </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Currency Exchange</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                Get real-time exchange rates and tips for the best conversion
-                methods
-              </p>
-              <Button className="w-full mt-3">Check Rates</Button>
-            </CardContent>
-          </Card>
         </div>
 
-        {/* Chat Interface */}
-        <div className="lg:col-span-2">
+        {/* Main Content Area - Right Columns */}
+        <div className="lg:col-span-3 space-y-6">
+          {/* Visualization Section */}
+          {showVisualization && currentTrip && (
+            <TripVisualization
+              tripId={currentTrip.id}
+              userId={currentUser?.uid || "guest"}
+            />
+          )}
+
+          {/* Chat Interface */}
           <Card className="h-[600px] flex flex-col">
             <CardHeader>
               <CardTitle>Chat with Your Travel Finance Advisor</CardTitle>

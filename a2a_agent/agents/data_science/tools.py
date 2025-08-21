@@ -48,22 +48,24 @@ async def call_ds_agent(
     tool_context: ToolContext,
 ):
     """Tool to call data science (nl2py) agent."""
-
+    
     if question == "N/A":
-        return tool_context.state["db_agent_output"]
-
-    input_data = tool_context.state["query_result"]
-
+        return tool_context.state.get("db_agent_output", "No data available")
+    
+    # Check if query_result exists, otherwise use db_agent_output
+    input_data = tool_context.state.get("query_result")
+    if not input_data:
+        input_data = tool_context.state.get("db_agent_output", "No data available")
+    
     question_with_data = f"""
-  Question to answer: {question}
-
-  Actual data to analyze prevoius quesiton is already in the following:
-  {input_data}
-
-  """
-
+    Question to answer: {question}
+    
+    Actual data to analyze previous question is already in the following:
+    {input_data}
+    """
+    
     agent_tool = AgentTool(agent=ds_agent)
-
+    
     ds_agent_output = await agent_tool.run_async(
         args={"request": question_with_data}, tool_context=tool_context
     )

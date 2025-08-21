@@ -97,17 +97,18 @@ export const TripVisualization: React.FC<TripVisualizationProps> = ({
       }
     } catch (error) {
       console.error("Failed to generate visualization:", error);
-      toast({
-        title: "Generation failed",
-        description: "Unable to create visualization. Please try again.",
-        variant: "destructive",
-      });
+      //   toast({
+      //     title: "Generation failed",
+      //     description: "Unable to create visualization. Please try again.",
+      //     variant: "destructive",
+      //   });
     } finally {
       setLoading(false);
     }
   };
 
   const pollForVideo = () => {
+    // Clear any existing interval
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
     }
@@ -133,11 +134,15 @@ export const TripVisualization: React.FC<TripVisualizationProps> = ({
             description: "Your animated visualization is now available.",
           });
         } else if (currentVisual?.video_status === "failed") {
-          // Just stop polling silently - no error toast
           if (intervalRef.current) {
             clearInterval(intervalRef.current);
           }
-          // Remove the "Creating animated version..." text by not setting any state
+          //   toast({
+          //     title: "Video generation failed",
+          //     description:
+          //       "The animation couldn't be created, but your image is still available.",
+          //     variant: "destructive",
+          //   });
         }
       } catch (error) {
         console.error("Polling error:", error);

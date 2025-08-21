@@ -1,4 +1,5 @@
-import json 
+import json
+from uuid import uuid4
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.utils.errors import ServerError
@@ -20,6 +21,8 @@ from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from google.genai.types import Content
+from google.genai import types as genai_types
+from google.adk.events import Event, EventActions
 
 from google.adk.agents.base_agent import BaseAgent
 from google.adk.runners import Runner
@@ -47,7 +50,6 @@ class AdkAgentToA2AExecutor(AgentExecutor):
         context: RequestContext,
         event_queue: EventQueue,
     ) -> None:
-        query = context.get_user_input()
         task = context.current_task
 
         if not task:
@@ -73,6 +75,53 @@ class AdkAgentToA2AExecutor(AgentExecutor):
                 session_id=session_id,
             )
 
+        # Process all parts of the message, not just text
+        text_parts = []
+        if context.message and context.message.parts:
+            for part in context.message.parts:
+                if isinstance(part.root, TextPart):
+                    text_parts.append(part.root.text)
+                # --- THIS IS THE CORRECTED LOGIC ---
+                # Check for an image by its MIME type, not by a specific class.
+                elif hasattr(part.root, 'mime_type') and part.root.mime_type.startswith('image/'):
+                    # Handle image upload
+                    image_part_root = part.root
+                    artifact_filename = f"user_photo_{uuid4()}.png"
+                    
+                    # Create ADK Part from image data
+                    adk_part = genai_types.Part.from_data(
+                        data=image_part_root.data,
+                        mime_type=image_part_root.mime_type,
+                    )
+                    
+                    # Save image as artifact
+                    await self._runner.artifact_service.save_artifact(
+                        app_name=self._agent.name,
+                        user_id=self._user_id,
+                        session_id=session_id,
+                        filename=artifact_filename,
+                        artifact=adk_part
+                    )
+                    
+                    # Create event to update session state with image reference
+                    # We get the existing session to append the event correctly.
+                    current_session = await self._runner.session_service.get_session(
+                         app_name=self._agent.name, user_id=self._user_id, session_id=session_id
+                    )
+                    state_update_event = Event(
+                        author="system",
+                        invocation_id=f"img_upload_{uuid4()}",
+                        actions=EventActions(state_delta={"uploaded_image_path": artifact_filename}),
+                    )
+                    
+                    # Update session state through session service
+                    await self._runner.session_service.append_event(current_session, state_update_event)
+                    
+                    # Log for debugging
+                    print(f"Saved image artifact: {artifact_filename}")
+
+        # Construct query from text parts
+        query = " ".join(text_parts) if text_parts else ""
         content = Content(role="user", parts=[{"text": query}])
 
         full_response_text = ""
@@ -91,7 +140,6 @@ class AdkAgentToA2AExecutor(AgentExecutor):
                 
                 if event.content and event.content.parts:
                     responses = event.get_function_responses()
-                    print(event.content.parts)
                     if responses:
                         for response in responses:
                             if 'result' in response.response:

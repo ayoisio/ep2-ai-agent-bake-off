@@ -13,31 +13,41 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
 
-const LoginPage: React.FC = () => {
+const SignupPage: React.FC = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const { login, loginWithGoogle } = useAuth();
+  const { signup, loginWithGoogle } = useAuth();
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (password !== confirmPassword) {
+      return setError("Passwords do not match");
+    }
+
+    if (password.length < 6) {
+      return setError("Password must be at least 6 characters");
+    }
+
     setLoading(true);
     setError("");
 
     try {
-      await login(email, password);
-      // Navigate to dashboard without userId parameter
+      await signup(email, password, displayName);
       navigate("/dashboard");
     } catch (err: any) {
-      setError(err.message || "Invalid email or password.");
+      setError(err.message || "Failed to create account.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleGoogleLogin = async () => {
+  const handleGoogleSignup = async () => {
     setLoading(true);
     setError("");
 
@@ -45,7 +55,7 @@ const LoginPage: React.FC = () => {
       await loginWithGoogle();
       navigate("/dashboard");
     } catch (err: any) {
-      setError(err.message || "Failed to login with Google.");
+      setError(err.message || "Failed to sign up with Google.");
     } finally {
       setLoading(false);
     }
@@ -55,13 +65,24 @@ const LoginPage: React.FC = () => {
     <div className="flex items-center justify-center min-h-[50vh] bg-background">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle className="text-2xl">Cymbal Bank</CardTitle>
+          <CardTitle className="text-2xl">Create Account</CardTitle>
           <CardDescription>
-            Welcome back! Please enter your credentials to login.
+            Sign up for a new Cymbal Bank account
           </CardDescription>
         </CardHeader>
-        <form onSubmit={handleLogin}>
+        <form onSubmit={handleSignup}>
           <CardContent className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="displayName">Full Name</Label>
+              <Input
+                id="displayName"
+                type="text"
+                placeholder="Enter your full name"
+                required
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+              />
+            </div>
             <div className="grid gap-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -78,15 +99,27 @@ const LoginPage: React.FC = () => {
               <Input
                 id="password"
                 type="password"
+                placeholder="Create a password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
+            <div className="grid gap-2">
+              <Label htmlFor="confirmPassword">Confirm Password</Label>
+              <Input
+                id="confirmPassword"
+                type="password"
+                placeholder="Confirm your password"
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+              />
+            </div>
             {error && <p className="text-destructive text-sm">{error}</p>}
 
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Signing in..." : "Sign in"}
+              {loading ? "Creating account..." : "Create account"}
             </Button>
 
             <div className="relative">
@@ -104,7 +137,7 @@ const LoginPage: React.FC = () => {
               type="button"
               variant="outline"
               className="w-full"
-              onClick={handleGoogleLogin}
+              onClick={handleGoogleSignup}
               disabled={loading}
             >
               <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
@@ -125,30 +158,21 @@ const LoginPage: React.FC = () => {
                   fill="#EA4335"
                 />
               </svg>
-              Continue with Google
+              Sign up with Google
             </Button>
           </CardContent>
         </form>
-        <CardFooter className="flex flex-col gap-2">
+        <CardFooter>
           <p className="text-sm text-muted-foreground">
-            Don't have an account?{" "}
-            <Link to="/signup" className="text-primary hover:underline">
-              Sign up
+            Already have an account?{" "}
+            <Link to="/" className="text-primary hover:underline">
+              Sign in
             </Link>
           </p>
-          <button
-            type="button"
-            className="text-sm text-muted-foreground hover:text-primary"
-            onClick={() => {
-              /* Implement forgot password */
-            }}
-          >
-            Forgot password?
-          </button>
         </CardFooter>
       </Card>
     </div>
   );
 };
 
-export default LoginPage;
+export default SignupPage;

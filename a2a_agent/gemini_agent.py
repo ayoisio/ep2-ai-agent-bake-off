@@ -1,19 +1,32 @@
-
 import os
-from .tools import reddit_tools as rt
-from .tools import financial_tools as ft
-from .tools import services_tools as st
-from .prompts import AGENT_INSTRUCTIONS
-
 from google.adk.agents import LlmAgent
 from a2a.types import AgentCard, AgentCapabilities, AgentSkill
 from google.adk.tools import FunctionTool
 
-# Import specialized agents
-from .agents.big_purchases import root_agent as big_purchases_agent
-from .agents.daily_spending import root_agent as daily_spending_agent
-from .agents.travel import root_agent as travel_agent
-
+# Try relative imports first, fall back to absolute imports
+try:
+    # Try relative imports
+    from .tools import reddit_tools as rt
+    from .tools import financial_tools as ft
+    from .tools import services_tools as st
+    from .prompts import AGENT_INSTRUCTIONS
+    
+    # Import specialized agents
+    from .agents.big_purchases import root_agent as big_purchases_agent
+    from .agents.daily_spending import root_agent as daily_spending_agent
+    from .agents.travel import root_agent as travel_agent
+except ImportError:
+    # Fall back to absolute imports
+    print("Relative imports failed, using absolute imports...")
+    from tools import reddit_tools as rt
+    from tools import financial_tools as ft
+    from tools import services_tools as st
+    from prompts import AGENT_INSTRUCTIONS
+    
+    # Import specialized agents
+    from agents.big_purchases import root_agent as big_purchases_agent
+    from agents.daily_spending import root_agent as daily_spending_agent
+    from agents.travel import root_agent as travel_agent
 
 
 class Agent(LlmAgent):
@@ -97,6 +110,7 @@ class Agent(LlmAgent):
         tools = [
             ft.get_user_profile,
             ft.get_user_accounts,
+            # ft.create_travel_visualization,
             ft.get_user_transactions,
             ft.get_user_debts,
             ft.get_user_investments,

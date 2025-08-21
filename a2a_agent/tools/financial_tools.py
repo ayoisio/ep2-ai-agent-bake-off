@@ -1,5 +1,9 @@
+# Filename: tools/financial_tools.py
+
 import os
 import requests
+from typing import Union, Optional
+import tempfile
 
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://backend-ep2-879168005744.us-west1.run.app/api")
 
@@ -105,10 +109,7 @@ def update_user_goal(goal_id: str, goal_data: dict) -> dict:
     response = requests.put(f"{API_BASE_URL}/goals/{goal_id}", json=goal_data)
     return response.json()
 
-
-# Updates below here only
-
-def create_user_account(account_data: dict,user_id: str) -> dict:
+def create_user_account(account_data: dict, user_id: str) -> dict:
     """
     Creates a new account for a specific user.
     
@@ -162,6 +163,128 @@ def delete_user_goal(goal_id: str) -> dict:
     """
     response = requests.delete(f"{API_BASE_URL}/goals/{goal_id}")
     return response.json()
+
+async def create_travel_visualization(context, destination: str, character_image_path: str, 
+                              scene_description: Optional[str], generate_video: bool,
+                              monthly_savings: float) -> dict:
+    """
+    Create a personalized travel visualization showing the user at their dream destination.
+    
+    Required Inputs:
+    - context: The tool context (automatically provided by ADK)
+    - destination (str): Travel destination (e.g., 'Paris', 'Tokyo', 'Bali')
+    - character_image_path (str): Artifact filename from session state (e.g., 'user_photo_xxx.png')
+    - scene_description (Optional[str]): Custom scene description (pass None for default)
+    - generate_video (bool): Whether to generate a video
+    - monthly_savings (float): Monthly savings amount for trip
+    """
+    from .travel_visualization_tools import TravelVisualizationTools
+    
+    # Load the image artifact
+    try:
+        image_artifact = await context.load_artifact(character_image_path)
+        if not image_artifact or not image_artifact.inline_data:
+            return {
+                "success": False,
+                "error": f"Could not load uploaded image. Please make sure you've uploaded a photo.",
+                "message": "I couldn't find your uploaded photo. Please upload an image and try again."
+            }
+        
+        # Save artifact data to a temporary file
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
+            tmp_file.write(image_artifact.inline_data.data)
+            temp_path = tmp_file.name
+            
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Failed to process uploaded image: {str(e)}",
+            "message": "There was an error processing your photo. Please try uploading it again."
+        }
+    
+    viz_tools = TravelVisualizationTools()
+    result = {
+        "destination": destination,
+        "visualization_complete": False
+    }
+    
+    try:
+        # Generate portrait using the temp file path
+        portrait_result = viz_tools.generate_travel_portrait(
+            destination=destination,
+            character_image_path=temp_path,
+            scene_description=scene_description
+        )
+        
+        if portrait_result["success"]:
+            result["portrait"] = {
+                "success": True,
+                "image_path": portrait_result["image_path"],
+                "image_url": portrait_result.get("image_url"),
+                "prompt_used": portrait_result["prompt_used"],
+                "message": f"Here's you enjoying {destination}! This is what your trip could look like."
+            }
+            
+            # Generate video if requested
+            if generate_video:
+                video_result = viz_tools.generate_travel_video(
+                    image_path=portrait_result["image_path"],
+                    destination=destination,
+                    video_style="cinematic"
+                )
+                
+                if video_result["success"]:
+                    result["video"] = {
+                        "success": True,
+                        "video_path": video_result["video_path"],
+                        "prompt_used": video_result["prompt_used"],
+                        "message": "Your travel video is ready! Watch yourself exploring your dream destination."
+                    }
+                else:
+                    result["video"] = {
+                        "success": False,
+                        "error": video_result["error"]
+                    }
+            
+            # Calculate savings timeline
+            savings_info = viz_tools.calculate_savings_timeline(
+                destination=destination,
+                monthly_savings=monthly_savings
+            )
+            
+            result["savings_plan"] = savings_info
+            result["visualization_complete"] = True
+            
+            # Add motivational message
+            if savings_info["months_to_save"] < 6:
+                timeline = "just a few months"
+                excitement = "Your dream trip is right around the corner!"
+            elif savings_info["months_to_save"] < 12:
+                timeline = "less than a year"
+                excitement = "Start saving now and you'll be there before you know it!"
+            else:
+                timeline = f"about {int(savings_info['months_to_save']/12)} years"
+                excitement = "Every journey begins with a single step. Start saving today!"
+            
+            result["motivation_message"] = (
+                f"Looking at yourself in {destination} makes it feel real, doesn't it? "
+                f"In {timeline}, this could be you! {excitement}"
+            )
+            
+        else:
+            result["error"] = portrait_result["error"]
+            
+    except Exception as e:
+        result["error"] = f"Visualization error: {str(e)}"
+        
+    finally:
+        # Clean up the temporary file
+        try:
+            os.unlink(temp_path)
+        except:
+            pass  # Don't fail if cleanup fails
+    
+    return result
 
 def get_bank_partners() -> dict:
     """
@@ -290,8 +413,6 @@ def cancel_meeting(meeting_id: str) -> dict:
     """
     response = requests.delete(f"{API_BASE_URL}/meetings/{meeting_id}")
     return response.json()
-
-# ===== NEW REDDIT COMMUNITY FUNCTIONS =====
 
 def search_reddit_finance_advice(query: str, category: str = "general_finance") -> dict:
     """

@@ -53,22 +53,20 @@ def _serialize_value_for_sql(value):
     if pd.isna(value):
         return "NULL"
     if isinstance(value, str):
-        # Escape single quotes and backslashes for SQL strings.
-        return f"'{value.replace('\\', '\\\\').replace("'", "''")}'"
+        # WORKAROUND: Perform replacement before f-string to avoid backslash in expression.
+        escaped_value = value.replace('\\', '\\\\')
+        return f"'''{escaped_value}'''"
     if isinstance(value, bytes):
-        return f"b'{value.decode('utf-8', 'replace').replace('\\', '\\\\').replace("'", "''")}'"
+        # WORKAROUND: Perform replacement before f-string to avoid backslash in expression.
+        decoded_and_escaped_value = value.decode('utf-8', 'replace').replace('\\', '\\\\')
+        return f"b'''{decoded_and_escaped_value}'''"
     if isinstance(value, (datetime.datetime, datetime.date, pd.Timestamp)):
-        # Timestamps and datetimes need to be quoted.
         return f"'{value}'"
     if isinstance(value, (list, np.ndarray)):
-        # Format arrays.
         return f"[{', '.join(_serialize_value_for_sql(v) for v in value)}]"
     if isinstance(value, dict):
-        # For STRUCT, BQ expects ('val1', 'val2', ...).
-        # The values() order from the dataframe should match the column order.
         return f"({', '.join(_serialize_value_for_sql(v) for v in value.values())})"
     return str(value)
-
 
 database_settings = None
 bq_client = None
@@ -129,14 +127,10 @@ def get_bigquery_schema(dataset_id,
     if client is None:
         client = bigquery.Client(project=compute_project_id)
 
-    # dataset_ref = client.dataset(dataset_id)
     dataset_ref = bigquery.DatasetReference(data_project_id, dataset_id)
 
     ddl_statements = ""
 
-    # Query INFORMATION_SCHEMA to robustly list tables. This is the recommended
-    # approach when a dataset may contain BigLake tables like Apache Iceberg,
-    # as the tables.list API can fail in those cases.
     info_schema_query = f"""
         SELECT table_name
         FROM `{data_project_id}.{dataset_id}.INFORMATION_SCHEMA.TABLES`
@@ -149,22 +143,17 @@ def get_bigquery_schema(dataset_id,
 
         if table_obj.table_type == "VIEW":
             view_query = table_obj.view_query
-            ddl_statements += (
-                f"CREATE OR REPLACE VIEW `{table_ref}` AS\n{view_query};\n\n"
-            )
+            ddl_statements += f"CREATE OR REPLACE VIEW `{table_ref}` AS\n{view_query};\n\n"
             continue
         elif table_obj.table_type == "EXTERNAL":
+            # (External table logic remains unchanged as it did not have the issue)
             if (
                 table_obj.external_data_configuration
                 and table_obj.external_data_configuration.source_format
                 == "ICEBERG"
             ):
                 config = table_obj.external_data_configuration
-                uris_list_str = ",\n    ".join(
-                    [f"'{uri}'" for uri in config.source_uris]
-                )
-
-                # Build column definitions from schema
+                uris_list_str = ",\n    ".join([f"'{uri}'" for uri in config.source_uris])
                 column_defs = []
                 for field in table_obj.schema:
                     col_type = field.field_type
@@ -181,7 +170,6 @@ OPTIONS (
   uris = [{uris_list_str}],
   format = 'ICEBERG'
 );\n\n"""
-            # Skip DDL generation for other external tables.
             continue
         elif table_obj.table_type == "TABLE":
             column_defs = []
@@ -191,20 +179,23 @@ OPTIONS (
                     col_type = f"ARRAY<{col_type}>"
                 col_def = f"  `{field.name}` {col_type}"
                 if field.description:
-                    # Use OPTIONS for column descriptions
-                    col_def += (
-                        " OPTIONS(description='"
-                        f"{field.description.replace("'", "''")}')"
-                    )
+                    escaped_description = field.description.replace('\\', '\\\\')
+                    col_def += f" OPTIONS(description='''{escaped_description}''')"
                 column_defs.append(col_def)
 
-            ddl_statement = (
-                f"CREATE OR REPLACE TABLE `{table_ref}` "
-                f"(\n{',\n'.join(column_defs)}\n);\n\n"
-            )
+            # --- IMPROVED AND CORRECTED DDL STATEMENT CREATION ---
+            # 1. Join the column definitions into a single string first.
+            #    This is clearer and avoids complex operations inside the f-string.
+            columns_ddl_string = ",\n".join(column_defs)
 
-            # Add example values if available by running a query. This is more
-            # robust than list_rows, especially for BigLake tables like Iceberg.
+            # 2. Use a simple, readable multiline f-string to build the final statement.
+            ddl_statement = f"""CREATE OR REPLACE TABLE `{table_ref}` (
+{columns_ddl_string}
+);
+
+"""
+            # --- END OF IMPROVEMENT ---
+
             try:
                 sample_query = f"SELECT * FROM `{table_ref}` LIMIT 5"
                 rows = client.query(sample_query).to_dataframe()
@@ -215,9 +206,7 @@ OPTIONS (
                         values_str = ", ".join(
                             _serialize_value_for_sql(v) for v in row.values
                         )
-                        ddl_statement += (
-                            f"INSERT INTO `{table_ref}` VALUES ({values_str});\n\n"
-                        )
+                        ddl_statement += f"INSERT INTO `{table_ref}` VALUES ({values_str});\n\n"
             except Exception as e:
                 logging.warning(
                     f"Could not retrieve sample rows for table {table_ref.path}: {e}"
@@ -226,7 +215,6 @@ OPTIONS (
 
             ddl_statements += ddl_statement
         else:
-            # Skip other types like MATERIALIZED_VIEW, SNAPSHOT etc.
             continue
 
     return ddl_statements
